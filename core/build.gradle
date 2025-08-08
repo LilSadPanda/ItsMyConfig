@@ -70,6 +70,8 @@ dependencies {
     testImplementation("${kyori(KyoriModule.MINI_MESSAGE)}")
     testImplementation("${kyoriPlatform(KyoriModule.BUKKIT)}")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    // Needed on Gradle 9 in CI to load the JUnit Platform launcher
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
 }
 
 tasks.withType(JavaCompile).configureEach {
