@@ -2,6 +2,9 @@ package to.itsme.itsmyconfig.hook;
 
 import me.clip.placeholderapi.PlaceholderAPI;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -10,6 +13,7 @@ import to.itsme.itsmyconfig.font.MappedFont;
 import to.itsme.itsmyconfig.placeholder.Placeholder;
 import to.itsme.itsmyconfig.placeholder.PlaceholderType;
 import to.itsme.itsmyconfig.util.Strings;
+import to.itsme.itsmyconfig.util.Utilities;
 
 /**
  * DynamicPlaceHolder class is a PlaceholderExpansion that handles dynamic placeholders for the ItsMyConfig plugin.
@@ -36,6 +40,21 @@ public final class PAPIHook extends PlaceholderExpansion {
      */
     public static final String PLACEHOLDER_NOT_FOUND_MSG = "Placeholder not found";
     private final String identifier;
+
+    private static final LegacyComponentSerializer AMPERSAND_SERIALIZER = LegacyComponentSerializer
+            .builder()
+            .character('&')
+            .hexCharacter('#')
+            .hexColors()
+            .build();
+
+    private static final LegacyComponentSerializer SECTION_SERIALIZER = LegacyComponentSerializer
+            .builder()
+            .character('§')
+            .hexCharacter('#')
+            .hexColors()
+            .useUnusualXRepeatedCharacterHexFormat()
+            .build();
 
     /**
      * DynamicPlaceHolder is a class that represents a dynamic placeholder for a placeholder expansion.
@@ -108,6 +127,52 @@ public final class PAPIHook extends PlaceholderExpansion {
         }
 
         final String firstParam = splitParams[0].toLowerCase();
+
+        // %imc_parse_<...>[_mode]% where mode in [mini|legacy|console]
+        if ("parse".equals(firstParam)) {
+            if (splitParams.length < 2) {
+                return ILLEGAL_ARGUMENT_MSG;
+            }
+
+            final String last = splitParams[splitParams.length - 1].toLowerCase();
+            final boolean hasMode = switch (last) {
+                case "c", "console", "l", "legacy", "m", "mini" -> true;
+                default -> false;
+            };
+
+            final String mode = hasMode ? last : "legacy";
+            final int endExclusive = hasMode ? splitParams.length - 1 : splitParams.length;
+            final StringBuilder msgBuilder = new StringBuilder();
+            for (int i = 1; i < endExclusive; i++) {
+                if (i > 1) msgBuilder.append('_');
+                msgBuilder.append(splitParams[i]);
+            }
+            final String message = msgBuilder.toString();
+
+            // Choose a player context if available; for console, fallback to first online player when present
+            final Player context = player != null ? player : Bukkit.getOnlinePlayers().stream().findFirst().orElse(null);
+
+            // Resolve <papi:...> eagerly as %...% for better compatibility with non-MM placeholders
+            String papiResolved = message.replaceAll("<papi:([^>]+)>", "%$1%");
+            try {
+                papiResolved = (context != null)
+                        ? PlaceholderAPI.setPlaceholders(context, papiResolved)
+                        : PlaceholderAPI.setPlaceholders(null, papiResolved);
+            } catch (Throwable ignored) {
+                // keep original if PAPI resolution fails
+            }
+
+            final Component component = (context != null)
+                    ? Utilities.translate(papiResolved, context)
+                    : Utilities.translate(papiResolved);
+
+            return switch (mode) {
+                case "c", "console" -> SECTION_SERIALIZER.serialize(component);
+                case "m", "mini" -> Utilities.MM.serialize(component);
+                case "l", "legacy" -> AMPERSAND_SERIALIZER.serialize(component);
+                default -> AMPERSAND_SERIALIZER.serialize(component);
+            };
+        }
         if (("font".equals(firstParam) || "f".equals(firstParam)) && splitParams.length >= 3) {
             return handleFont(splitParams);
         }
